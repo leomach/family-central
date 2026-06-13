@@ -1,0 +1,12 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/close-month",
+      "schedule": "0 3 2 * *"
+    },
+    {
+      "path": "/api/cron/generate-recurring",
+      "schedule": "0 6 * * *"
+    }
+  ]
+}

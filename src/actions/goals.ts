@@ -1,0 +1,73 @@
+"use server"
+
+import { revalidatePath } from "next/cache"
+import { createClient } from "@/lib/supabase/server"
+import { z } from "zod"
+
+const GoalSchema = z.object({
+  name: z.string().min(1).max(100),
+  target_value: z.number().positive(),
+  familyId: z.string().uuid(),
+})
+
+export async function createGoal(input: z.infer<typeof GoalSchema>) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Não autenticado" }
+
+  const parsed = GoalSchema.safeParse(input)
+  if (!parsed.success) return { error: "Dados inválidos" }
+
+  const { error } = await supabase.from("savings_goals").insert({
+    family_id: parsed.data.familyId,
+    name: parsed.data.name,
+    target_value: parsed.data.target_value,
+  })
+
+  if (error) return { error: error.message }
+
+  revalidatePath("/enxoval")
+  return { ok: true }
+}
+
+export async function contributeToGoal(input: {
+  goalId: string
+  familyId: string
+  amount: number
+  direction: "deposit" | "withdraw"
+}) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Não autenticado" }
+
+  const { data: member } = await supabase
+    .from("family_members")
+    .select("family_id")
+    .eq("user_id", user.id)
+    .single()
+
+  if (!member || member.family_id !== input.familyId) return { error: "Sem permissão" }
+
+  const { data, error } = await supabase.rpc("contribute_to_goal", {
+    p_goal_id: input.goalId,
+    p_user_id: user.id,
+    p_family_id: input.familyId,
+    p_amount: input.amount,
+    p_direction: input.direction,
+  })
+
+  if (error) return { error: error.message }
+
+  // Invalidate snapshot
+  const monthStr = new Date().toISOString().substring(0, 7) + "-01"
+  await supabase
+    .from("balance_snapshots")
+    .update({ is_dirty: true })
+    .eq("user_id", user.id)
+    .gte("month", monthStr)
+
+  revalidatePath(`/enxoval/${input.goalId}`)
+  revalidatePath("/enxoval")
+  revalidatePath("/financeiro")
+  return { ok: true, transactionId: data }
+}
