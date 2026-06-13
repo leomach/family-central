@@ -9,10 +9,6 @@ const withSerwist = withSerwistInit({
   disable: process.env.NODE_ENV === "development",
 })
 
-const nextConfig: NextConfig = {
-  experimental: {
-    serverActions: { allowedOrigins: ["localhost:3000"] },
-  },
-}
+const nextConfig: NextConfig = {}
 
 export default withSerwist(nextConfig)
