@@ -1,6 +1,8 @@
 import { defaultCache } from "@serwist/next/worker"
 import type { PrecacheEntry, SerwistGlobalConfig } from "serwist"
-import { Serwist } from "serwist"
+import { CacheFirst, NetworkFirst, StaleWhileRevalidate, Serwist } from "serwist"
+import { ExpirationPlugin } from "serwist"
+import { CacheableResponsePlugin } from "serwist"
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -19,74 +21,78 @@ const sw = new Serwist({
     // Fontes Google → Cache First (1 ano)
     {
       matcher: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
-      handler: "CacheFirst",
-      options: {
+      handler: new CacheFirst({
         cacheName: "google-fonts",
-        expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
-        cacheableResponse: { statuses: [0, 200] },
-      },
+        plugins: [
+          new ExpirationPlugin({ maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 }),
+          new CacheableResponsePlugin({ statuses: [0, 200] }),
+        ],
+      }),
     },
     // FontAwesome CDN
     {
       matcher: /^https:\/\/cdnjs\.cloudflare\.com\/.*/i,
-      handler: "CacheFirst",
-      options: {
+      handler: new CacheFirst({
         cacheName: "fontawesome",
-        expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
-        cacheableResponse: { statuses: [0, 200] },
-      },
+        plugins: [
+          new ExpirationPlugin({ maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 }),
+          new CacheableResponsePlugin({ statuses: [0, 200] }),
+        ],
+      }),
     },
     // Ícones gerados dinamicamente → Cache First (30 dias)
     {
       matcher: /\/api\/icon\/.*/i,
-      handler: "CacheFirst",
-      options: {
+      handler: new CacheFirst({
         cacheName: "app-icons",
-        expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 30 },
-        cacheableResponse: { statuses: [0, 200] },
-      },
+        plugins: [
+          new ExpirationPlugin({ maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 30 }),
+          new CacheableResponsePlugin({ statuses: [0, 200] }),
+        ],
+      }),
     },
     // Imagens estáticas → Cache First (30 dias)
     {
       matcher: /\.(?:png|jpg|jpeg|svg|gif|webp|ico)$/i,
-      handler: "CacheFirst",
-      options: {
+      handler: new CacheFirst({
         cacheName: "images",
-        expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 30 },
-      },
+        plugins: [
+          new ExpirationPlugin({ maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 30 }),
+        ],
+      }),
     },
     // Manifest
     {
       matcher: /\/manifest(\.webmanifest)?$/i,
-      handler: "StaleWhileRevalidate",
-      options: { cacheName: "manifest" },
+      handler: new StaleWhileRevalidate({ cacheName: "manifest" }),
     },
     // Supabase REST → Network First (5s timeout, cache 1 dia)
     {
       matcher: /^https:\/\/.*\.supabase\.co\/(rest|auth)\/.*/i,
-      handler: "NetworkFirst",
-      options: {
+      handler: new NetworkFirst({
         cacheName: "supabase",
         networkTimeoutSeconds: 5,
-        expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 },
-        cacheableResponse: { statuses: [0, 200] },
-      },
+        plugins: [
+          new ExpirationPlugin({ maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 }),
+          new CacheableResponsePlugin({ statuses: [0, 200] }),
+        ],
+      }),
     },
     // Páginas Next.js (navegação) → Network First com fallback offline
     {
-      matcher: ({ request }) => request.mode === "navigate",
-      handler: "NetworkFirst",
-      options: {
+      matcher: ({ request }: { request: Request }) => request.mode === "navigate",
+      handler: new NetworkFirst({
         cacheName: "pages",
         networkTimeoutSeconds: 3,
-        expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 },
-      },
+        plugins: [
+          new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 }),
+        ],
+      }),
     },
     // RSC payloads
     {
       matcher: /\/_next\/data\/.*/i,
-      handler: "StaleWhileRevalidate",
-      options: { cacheName: "rsc" },
+      handler: new StaleWhileRevalidate({ cacheName: "rsc" }),
     },
     ...defaultCache,
   ],
@@ -94,7 +100,7 @@ const sw = new Serwist({
     entries: [
       {
         url: "/offline",
-        matcher: ({ request }) => request.destination === "document",
+        matcher: ({ request }: { request: Request }) => request.destination === "document",
       },
     ],
   },
@@ -102,8 +108,6 @@ const sw = new Serwist({
 
 sw.addEventListeners()
 
-// Background Sync → quando o navegador detecta volta da conexão, ele dispara este evento.
-// Apenas notifica o cliente, que executa o flush usando as Server Actions já autenticadas.
 self.addEventListener("sync", (event) => {
   const e = event as ExtendableEvent & { tag: string }
   if (e.tag === "flush-queue") {
@@ -116,7 +120,6 @@ async function notifyClientsToFlush() {
   clients.forEach((client) => client.postMessage({ type: "FLUSH_QUEUE" }))
 }
 
-// Push Notifications: estrutura pronta, aguarda Server Action de envio
 self.addEventListener("push", (event) => {
   if (!event.data) return
   try {
