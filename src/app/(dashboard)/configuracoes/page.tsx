@@ -44,7 +44,7 @@ export default async function ConfiguracoesPage() {
       </Card>
 
       {(ctx.role === "owner" || ctx.role === "admin") && (
-        <InviteSection familyId={ctx.familyId} />
+        <InviteSection familyId={ctx.familyId} familyName={ctx.familyName} />
       )}
 
       <LogoutButton />
