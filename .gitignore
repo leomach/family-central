@@ -8,3 +8,4 @@ public/workbox-*.js
 *.tsbuildinfo
 .DS_Store
 .vercel
+.env*

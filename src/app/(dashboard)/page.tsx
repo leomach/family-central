@@ -22,7 +22,7 @@ export default async function HomePage() {
   const [balance, monthIncome, monthExpense, openTodos, pendingItems, upcomingEvents, activeGoals] = await Promise.all([
     supabase.rpc("get_user_balance", { p_user_id: ctx.userId }),
     supabase.from("transactions")
-      .select("amount").eq("user_id", ctx.userId).eq("type", "income")
+      .select("amount").eq("user_id", ctx.userId).in("type", ["income", "transfer_in"])
       .is("deleted_at", null).gte("date", month),
     supabase.from("transactions")
       .select("amount").eq("user_id", ctx.userId).in("type", ["expense", "transfer_out"])

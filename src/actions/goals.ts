@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
+import { getMonthStart } from "@/lib/utils"
 import { z } from "zod"
 
 const GoalSchema = z.object({
@@ -40,13 +41,15 @@ export async function contributeToGoal(input: {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return { error: "Não autenticado" }
 
+  // Verifica se o usuário pertence à família alvo (suporta usuário em várias famílias).
   const { data: member } = await supabase
     .from("family_members")
     .select("family_id")
     .eq("user_id", user.id)
-    .single()
+    .eq("family_id", input.familyId)
+    .maybeSingle()
 
-  if (!member || member.family_id !== input.familyId) return { error: "Sem permissão" }
+  if (!member) return { error: "Sem permissão" }
 
   const { data, error } = await supabase.rpc("contribute_to_goal", {
     p_goal_id: input.goalId,
@@ -59,7 +62,7 @@ export async function contributeToGoal(input: {
   if (error) return { error: error.message }
 
   // Invalidate snapshot
-  const monthStr = new Date().toISOString().substring(0, 7) + "-01"
+  const monthStr = getMonthStart()
   await supabase
     .from("balance_snapshots")
     .update({ is_dirty: true })

@@ -26,7 +26,7 @@ export default async function FinanceiroPage({
   monthEnd.setDate(0)
   const monthEndStr = monthEnd.toISOString().split("T")[0]
 
-  const [balanceResult, transactionsResult, categoriesResult, members, budgetsResult] = await Promise.all([
+  const [balanceResult, transactionsResult, categoriesResult, members, budgetsResult, proportionsResult] = await Promise.all([
     supabase.rpc("get_user_balance", { p_user_id: ctx.userId }),
     supabase
       .from("transactions")
@@ -47,15 +47,25 @@ export default async function FinanceiroPage({
       .select("*, category:categories(id,name,icon,type)")
       .eq("family_id", ctx.familyId)
       .eq("month", month),
+    supabase
+      .from("income_proportions")
+      .select("user_id, proportion")
+      .eq("family_id", ctx.familyId)
+      .eq("month", month),
   ])
 
   const transactions = transactionsResult.data ?? []
   const categories = categoriesResult.data ?? []
   const balance = balanceResult.data ?? 0
   const budgets = budgetsResult.data ?? []
+  const proportions = Object.fromEntries(
+    (proportionsResult.data ?? []).map((p) => [p.user_id, Number(p.proportion)])
+  )
 
+  // Receita inclui transfer_in (retirada de caixinha) e despesa inclui transfer_out
+  // (depósito em caixinha), para o resumo bater com o saldo (get_user_balance).
   const income = transactions
-    .filter((t) => t.type === "income")
+    .filter((t) => t.type === "income" || t.type === "transfer_in")
     .reduce((sum, t) => sum + Number(t.amount), 0)
   const expenses = transactions
     .filter((t) => t.type === "expense" || t.type === "transfer_out")
@@ -72,6 +82,7 @@ export default async function FinanceiroPage({
             userId={ctx.userId}
             categories={categories}
             familyMembers={members.map((m) => ({ user_id: m.user_id, name: m.name }))}
+            proportions={proportions}
           />
         </div>
       </div>

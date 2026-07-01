@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
-import { getMonthStart } from "@/lib/utils"
+import { getMonthStart, splitAmount } from "@/lib/utils"
 import type { TransactionType } from "@/types/database"
 import { z } from "zod"
 
@@ -44,7 +44,7 @@ export async function createTransaction(input: z.infer<typeof TransactionSchema>
   if (error) return { error: error.message }
 
   if (type === "income") {
-    await recalculateProportions(familyId, getMonthStart(new Date(date)))
+    await recalculateProportions(familyId, getMonthStart(date))
   }
 
   await invalidateSnapshots(user.id, date)
@@ -76,7 +76,7 @@ async function createSharedTransaction(data: {
   if (invalidParticipants.length > 0) return { error: "Participante inválido" }
 
   // Get proportions for the month
-  const month = getMonthStart(new Date(data.date))
+  const month = getMonthStart(data.date)
   const { data: proportions } = await supabase
     .from("income_proportions")
     .select("*")
@@ -84,27 +84,15 @@ async function createSharedTransaction(data: {
     .eq("month", month)
     .in("user_id", data.participants)
 
-  // Calculate each participant's share
-  const n = data.participants.length
+  // Divide proporcionalmente à renda (com fallback para divisão igual).
+  // splitAmount trabalha em centavos, distribui o resto e garante mínimo de 1
+  // centavo por participante — nenhuma parcela pode violar o CHECK (amount > 0).
   const proportionMap = new Map(
-    data.participants.map((uid) => {
-      const p = (proportions ?? []).find((x) => x.user_id === uid)
-      return [uid, p?.proportion ?? 1 / n]
-    })
+    (proportions ?? []).map((p) => [p.user_id, Number(p.proportion)])
   )
-
-  const totalProportion = Array.from(proportionMap.values()).reduce((a, b) => a + b, 0)
-  const amounts = new Map<string, number>()
-  let allocated = 0
-
-  data.participants.slice(0, -1).forEach((uid) => {
-    const share = Math.round(((proportionMap.get(uid)! / totalProportion) * data.amount) * 100) / 100
-    amounts.set(uid, share)
-    allocated += share
-  })
-  // Last participant gets the remainder to ensure exact sum
-  const lastUid = data.participants[data.participants.length - 1]
-  amounts.set(lastUid, Math.round((data.amount - allocated) * 100) / 100)
+  const split = splitAmount(data.amount, data.participants, proportionMap)
+  if ("error" in split) return { error: split.error }
+  const amounts = split
 
   // Create transaction_group
   const { data: group, error: groupError } = await serviceClient
@@ -214,12 +202,20 @@ async function recalculateProportions(familyId: string, month: string) {
   const total = Array.from(totalByUser.values()).reduce((a, b) => a + b, 0)
   if (total === 0) return
 
-  const upserts = Array.from(totalByUser.entries()).map(([uid, inc]) => ({
-    family_id: familyId,
-    user_id: uid,
-    month,
-    proportion: Number((inc / total).toFixed(5)),
-  }))
+  // A última proporção recebe o resto (1 - soma das anteriores) para que o
+  // conjunto some exatamente 1 — evita o 0,33+0,33+0,33 = 0,99 do arredondamento.
+  const entries = Array.from(totalByUser.entries())
+  let acc = 0
+  const upserts = entries.map(([uid, inc], idx) => {
+    let proportion: number
+    if (idx < entries.length - 1) {
+      proportion = Number((inc / total).toFixed(5))
+      acc += proportion
+    } else {
+      proportion = Number(Math.min(Math.max(1 - acc, 0), 1).toFixed(5))
+    }
+    return { family_id: familyId, user_id: uid, month, proportion }
+  })
 
   await supabase.from("income_proportions").upsert(upserts, {
     onConflict: "family_id,user_id,month",
@@ -228,7 +224,7 @@ async function recalculateProportions(familyId: string, month: string) {
 
 async function invalidateSnapshots(userId: string, transactionDate: string) {
   const supabase = await createClient()
-  const monthStr = getMonthStart(new Date(transactionDate))
+  const monthStr = getMonthStart(transactionDate)
 
   await supabase
     .from("balance_snapshots")

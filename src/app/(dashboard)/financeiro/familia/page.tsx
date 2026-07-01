@@ -40,7 +40,7 @@ export default async function FamiliaFinanceiroPage() {
   const proportions = proportionsResult.data ?? []
 
   const totalIncome = transactions
-    .filter((t) => t.type === "income")
+    .filter((t) => t.type === "income" || t.type === "transfer_in")
     .reduce((sum, t) => sum + Number(t.amount), 0)
   const totalExpenses = transactions
     .filter((t) => t.type === "expense" || t.type === "transfer_out")
@@ -48,7 +48,7 @@ export default async function FamiliaFinanceiroPage() {
 
   const perMember = members.map((m) => {
     const inc = transactions
-      .filter((t) => t.user_id === m.user_id && t.type === "income")
+      .filter((t) => t.user_id === m.user_id && (t.type === "income" || t.type === "transfer_in"))
       .reduce((s, t) => s + Number(t.amount), 0)
     const exp = transactions
       .filter((t) => t.user_id === m.user_id && (t.type === "expense" || t.type === "transfer_out"))

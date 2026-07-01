@@ -13,16 +13,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Checkbox } from "@/components/ui/checkbox"
 import { toast } from "@/components/ui/toaster"
 import { Plus } from "lucide-react"
-import { formatCurrency } from "@/lib/utils"
+import { formatCurrency, splitAmount } from "@/lib/utils"
 
 interface TransactionFormProps {
   familyId: string
   userId: string
   categories: Category[]
   familyMembers?: { user_id: string; name: string }[]
+  // Proporção de renda do mês por usuário — usada para prever o rateio real.
+  proportions?: Record<string, number>
 }
 
-export function TransactionForm({ familyId, userId, categories, familyMembers = [] }: TransactionFormProps) {
+export function TransactionForm({ familyId, userId, categories, familyMembers = [], proportions = {} }: TransactionFormProps) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [type, setType] = useState<"income" | "expense">("expense")
@@ -30,7 +32,11 @@ export function TransactionForm({ familyId, userId, categories, familyMembers = 
   const [description, setDescription] = useState("")
   const [categoryId, setCategoryId] = useState("")
   const [date, setDate] = useState("")
-  useEffect(() => { setDate(new Date().toISOString().split("T")[0]) }, [])
+  useEffect(() => {
+    // Data local do dispositivo (não UTC) — evita "pular" para o dia seguinte à noite.
+    const d = new Date()
+    setDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`)
+  }, [])
   const [shared, setShared] = useState(false)
   const [participants, setParticipants] = useState<string[]>([userId])
   const [loading, setLoading] = useState(false)
@@ -179,13 +185,22 @@ export function TransactionForm({ familyId, userId, categories, familyMembers = 
                 <Label htmlFor="shared" className="cursor-pointer">Dividir com a família</Label>
               </div>
 
-              {shared && (
+              {shared && (() => {
+                // Prevê o rateio real (proporcional à renda, mesmo cálculo do backend).
+                const parsedAmount = parseFloat(amount.replace(",", ".")) || 0
+                const propMap = new Map(Object.entries(proportions))
+                const split = parsedAmount > 0 ? splitAmount(parsedAmount, participants, propMap) : null
+                const shares = split && !("error" in split) ? split : null
+                return (
                 <div className="space-y-2 pl-6">
+                  {shares === null && parsedAmount > 0 && (
+                    <p className="text-xs text-destructive">Valor muito baixo para dividir entre os participantes.</p>
+                  )}
+                  <p className="text-[11px] text-muted-foreground">Rateio proporcional à renda do mês.</p>
                   {otherMembers.map((m) => {
                     const selected = participants.includes(m.user_id)
-                    const parsedAmount = parseFloat(amount.replace(",", ".")) || 0
-                    const share = selected && parsedAmount > 0
-                      ? formatCurrency(parsedAmount / participants.length)
+                    const share = selected && shares
+                      ? formatCurrency(shares.get(m.user_id) ?? 0)
                       : null
                     return (
                       <div key={m.user_id} className="flex items-center justify-between">
@@ -198,7 +213,8 @@ export function TransactionForm({ familyId, userId, categories, familyMembers = 
                     )
                   })}
                 </div>
-              )}
+                )
+              })()}
             </div>
           )}
 
