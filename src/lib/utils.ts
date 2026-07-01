@@ -20,6 +20,13 @@ export function formatDate(date: string): string {
   }).format(new Date(date + "T00:00:00"))
 }
 
+export function formatDateShort(date: string): string {
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "short",
+  }).format(new Date(date + "T00:00:00"))
+}
+
 export function formatMonth(date: string): string {
   return new Intl.DateTimeFormat("pt-BR", {
     month: "long",

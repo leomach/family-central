@@ -5,7 +5,7 @@ import { getFamilyContext } from "@/lib/family"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { formatCurrency, currentMonthStart } from "@/lib/utils"
+import { formatCurrency, formatDateShort, currentMonthStart } from "@/lib/utils"
 import { TrendingUp, Target, ListChecks, ShoppingCart, Calendar as CalendarIcon, ArrowRight } from "lucide-react"
 
 export const metadata: Metadata = { title: "Início" }
@@ -101,7 +101,7 @@ export default async function HomePage() {
                   <span className="text-sm truncate">{t.title}</span>
                   {t.priority === "high" && <Badge variant="destructive" className="text-[10px] h-4 px-1.5">!</Badge>}
                 </div>
-                {t.due_date && <span className="text-xs text-muted-foreground shrink-0 ml-2">{new Date(t.due_date + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}</span>}
+                {t.due_date && <span className="text-xs text-muted-foreground shrink-0 ml-2">{formatDateShort(t.due_date)}</span>}
               </Link>
             ))}
           </CardContent>
@@ -148,7 +148,7 @@ export default async function HomePage() {
                   <span className="text-sm">{e.title}</span>
                 </div>
                 <span className="text-xs text-muted-foreground">
-                  {new Date(e.event_date + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "short" })}
+                  {formatDateShort(e.event_date)}
                 </span>
               </div>
             ))}

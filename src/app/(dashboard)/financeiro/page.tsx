@@ -39,7 +39,7 @@ export default async function FinanceiroPage({
     supabase
       .from("categories")
       .select("*")
-      .or(`family_id.is.null,family_id.eq.${ctx.familyId}`)
+      .eq("family_id", ctx.familyId)
       .order("name"),
     getFamilyMembers(ctx.familyId),
     supabase
@@ -78,12 +78,15 @@ export default async function FinanceiroPage({
 
       <BalanceCard balance={balance} income={income} expenses={expenses} month={month} />
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <a href="/financeiro/recorrentes" className="flex items-center justify-center gap-2 p-3 rounded-lg bg-card hover:bg-muted text-sm border border-border">
           <span>🔁</span> Recorrentes
         </a>
         <a href="/orcamento" className="flex items-center justify-center gap-2 p-3 rounded-lg bg-card hover:bg-muted text-sm border border-border">
           <span>📊</span> Orçamento
+        </a>
+        <a href="/configuracoes/categorias" className="flex items-center justify-center gap-2 p-3 rounded-lg bg-card hover:bg-muted text-sm border border-border">
+          <span>🏷️</span> Categorias
         </a>
       </div>
 

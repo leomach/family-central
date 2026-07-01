@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { createTransaction } from "@/actions/transactions"
 import { enqueue } from "@/lib/offline-queue"
@@ -29,7 +29,8 @@ export function TransactionForm({ familyId, userId, categories, familyMembers = 
   const [amount, setAmount] = useState("")
   const [description, setDescription] = useState("")
   const [categoryId, setCategoryId] = useState("")
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0])
+  const [date, setDate] = useState("")
+  useEffect(() => { setDate(new Date().toISOString().split("T")[0]) }, [])
   const [shared, setShared] = useState(false)
   const [participants, setParticipants] = useState<string[]>([userId])
   const [loading, setLoading] = useState(false)

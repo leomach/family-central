@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { randomUUID } from "node:crypto"
 import { createClient, createServiceClient } from "@/lib/supabase/server"
+import { DEFAULT_CATEGORIES } from "@/lib/default-categories"
 
 function generateCode(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
@@ -37,6 +38,16 @@ export async function createFamily(name: string) {
     await service.from("families").delete().eq("id", familyId)
     return { error: memberError.message }
   }
+
+  // Semeia as categorias padrão como categorias editáveis da família.
+  await service.from("categories").insert(
+    DEFAULT_CATEGORIES.map((c) => ({
+      family_id: familyId,
+      name: c.name,
+      type: c.type,
+      icon: c.icon,
+    }))
+  )
 
   revalidatePath("/")
   return { ok: true }

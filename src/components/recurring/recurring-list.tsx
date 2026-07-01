@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState, useEffect, useTransition } from "react"
 import type { RecurringTransaction, Category } from "@/types/database"
 import { createRecurring, toggleRecurring, deleteRecurring } from "@/actions/recurring"
 import { Card, CardContent } from "@/components/ui/card"
@@ -102,7 +102,8 @@ function NewRecurringForm({ categories, members, currentUserId }: { categories: 
   const [description, setDescription] = useState("")
   const [categoryId, setCategoryId] = useState("")
   const [frequency, setFrequency] = useState<"monthly" | "weekly" | "yearly">("monthly")
-  const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0])
+  const [startDate, setStartDate] = useState("")
+  useEffect(() => { setStartDate(new Date().toISOString().split("T")[0]) }, [])
   const [shared, setShared] = useState(false)
   const [participants, setParticipants] = useState<string[]>([currentUserId])
   const [loading, setLoading] = useState(false)

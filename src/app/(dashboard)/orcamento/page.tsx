@@ -29,7 +29,7 @@ export default async function OrcamentoPage({
     supabase
       .from("categories")
       .select("*")
-      .or(`family_id.is.null,family_id.eq.${ctx.familyId}`)
+      .eq("family_id", ctx.familyId)
       .eq("type", "expense")
       .order("name"),
     supabase

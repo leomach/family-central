@@ -19,7 +19,7 @@ export default async function RecorrentesPage() {
     supabase
       .from("categories")
       .select("*")
-      .or(`family_id.is.null,family_id.eq.${ctx.familyId}`)
+      .eq("family_id", ctx.familyId)
       .order("name"),
     getFamilyMembers(ctx.familyId),
   ])

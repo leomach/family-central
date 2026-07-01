@@ -1,9 +1,11 @@
 import type { Metadata } from "next"
+import Link from "next/link"
 import { getFamilyContext, getFamilyMembers } from "@/lib/family"
 import { InviteSection } from "./invite-section"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { LogoutButton } from "./logout-button"
+import { Tags, ChevronRight } from "lucide-react"
 
 export const metadata: Metadata = { title: "Configurações" }
 
@@ -40,6 +42,18 @@ export default async function ConfiguracoesPage() {
               <Badge variant="secondary">{m.role}</Badge>
             </div>
           ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-0">
+          <Link href="/configuracoes/categorias" className="flex items-center justify-between p-4 hover:bg-muted transition-colors rounded-lg">
+            <span className="flex items-center gap-2.5 text-sm font-medium">
+              <Tags className="h-4 w-4 text-muted-foreground" />
+              Categorias financeiras
+            </span>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </Link>
         </CardContent>
       </Card>
 
