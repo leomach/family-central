@@ -1,4 +1,4 @@
-import type { Transaction } from "@/types/database"
+import type { Category, Transaction } from "@/types/database"
 import type { MemberInfo } from "@/lib/family"
 import { TransactionCard } from "./transaction-card"
 
@@ -7,9 +7,11 @@ interface TransactionListProps {
   members?: MemberInfo[]
   showOwner?: boolean
   emptyMessage?: string
+  categories?: Category[]
+  currentUserId?: string
 }
 
-export function TransactionList({ transactions, members = [], showOwner, emptyMessage }: TransactionListProps) {
+export function TransactionList({ transactions, members = [], showOwner, emptyMessage, categories = [], currentUserId }: TransactionListProps) {
   if (transactions.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
@@ -37,7 +39,7 @@ export function TransactionList({ transactions, members = [], showOwner, emptyMe
           </p>
           <div className="space-y-1">
             {grouped[date].map((tx) => (
-              <TransactionCard key={tx.id} transaction={tx} members={members} showOwner={showOwner} />
+              <TransactionCard key={tx.id} transaction={tx} members={members} showOwner={showOwner} categories={categories} currentUserId={currentUserId} />
             ))}
           </div>
         </div>

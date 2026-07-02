@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { createClient } from "@/lib/supabase/server"
 import { notFound, redirect } from "next/navigation"
 import { ContributionModal } from "@/components/goals/contribution-modal"
+import { EditContributionModal } from "@/components/goals/edit-contribution-modal"
 import { GoalCalculator } from "@/components/goals/goal-calculator"
 import { getFamilyMembers } from "@/lib/family"
 import { formatCurrency, formatDate } from "@/lib/utils"
@@ -35,7 +36,7 @@ export default async function GoalPage({ params }: { params: Promise<{ id: strin
   const [{ data: contributions }, familyMembers] = await Promise.all([
     supabase
       .from("savings_contributions")
-      .select("*")
+      .select("*, transactions!transaction_id(date)")
       .eq("goal_id", goal.id)
       .order("created_at", { ascending: false })
       .limit(20),
@@ -102,19 +103,32 @@ export default async function GoalPage({ params }: { params: Promise<{ id: strin
         {(contributions ?? []).length === 0 && (
           <p className="text-sm text-muted-foreground py-4 text-center">Nenhuma movimentação ainda</p>
         )}
-        {(contributions ?? []).map((c) => (
-          <div key={c.id} className="flex items-center justify-between py-3 border-b border-border last:border-0">
-            <div>
-              <p className="text-sm">{c.amount > 0 ? "Depósito" : "Retirada"}</p>
-              <p className="text-xs text-muted-foreground">
-                {memberNames[c.user_id] ?? "Membro"} · {formatDate(c.created_at)}
-              </p>
+        {(contributions ?? []).map((c) => {
+          const txDate = (c.transactions as { date: string } | null)?.date ?? c.created_at.split("T")[0]
+          const isDeposit = c.amount > 0
+          return (
+            <div key={c.id} className="flex items-center justify-between py-3 border-b border-border last:border-0">
+              <div>
+                <p className="text-sm">{isDeposit ? "Depósito" : "Retirada"}</p>
+                <p className="text-xs text-muted-foreground">
+                  {memberNames[c.user_id] ?? "Membro"} · {formatDate(txDate)}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <p className={`font-semibold ${isDeposit ? "text-income" : "text-expense"}`}>
+                  {isDeposit ? "+" : ""}{formatCurrency(Math.abs(c.amount))}
+                </p>
+                <EditContributionModal
+                  contributionId={c.id}
+                  goalId={goal.id}
+                  currentAmount={Math.abs(c.amount)}
+                  currentDate={txDate}
+                  isDeposit={isDeposit}
+                />
+              </div>
             </div>
-            <p className={`font-semibold ${c.amount > 0 ? "text-income" : "text-expense"}`}>
-              {c.amount > 0 ? "+" : ""}{formatCurrency(Math.abs(c.amount))}
-            </p>
-          </div>
-        ))}
+          )
+        })}
       </section>
     </div>
   )

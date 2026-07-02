@@ -6,6 +6,7 @@ import { BalanceCard } from "@/components/finance/balance-card"
 import { TransactionList } from "@/components/transactions/transaction-list"
 import { TransactionForm } from "@/components/transactions/transaction-form"
 import { BudgetSummary } from "@/components/finance/budget-summary"
+import { TitheCard } from "@/components/finance/tithe-card"
 import { MonthSelector } from "@/components/finance/month-selector"
 import { currentMonthStart } from "@/lib/utils"
 
@@ -26,8 +27,8 @@ export default async function FinanceiroPage({
   monthEnd.setDate(0)
   const monthEndStr = monthEnd.toISOString().split("T")[0]
 
-  const [balanceResult, transactionsResult, categoriesResult, members, budgetsResult, proportionsResult] = await Promise.all([
-    supabase.rpc("get_user_balance", { p_user_id: ctx.userId }),
+  const [summaryResult, transactionsResult, categoriesResult, members, budgetsResult, proportionsResult] = await Promise.all([
+    supabase.rpc("get_month_summary", { p_user_id: ctx.userId, p_month: month }),
     supabase
       .from("transactions")
       .select("*, category:categories(id,name,icon,type)")
@@ -56,19 +57,21 @@ export default async function FinanceiroPage({
 
   const transactions = transactionsResult.data ?? []
   const categories = categoriesResult.data ?? []
-  const balance = balanceResult.data ?? 0
   const budgets = budgetsResult.data ?? []
   const proportions = Object.fromEntries(
     (proportionsResult.data ?? []).map((p) => [p.user_id, Number(p.proportion)])
   )
 
-  // Receita inclui transfer_in (retirada de caixinha) e despesa inclui transfer_out
-  // (depósito em caixinha), para o resumo bater com o saldo (get_user_balance).
-  const income = transactions
-    .filter((t) => t.type === "income" || t.type === "transfer_in")
-    .reduce((sum, t) => sum + Number(t.amount), 0)
-  const expenses = transactions
-    .filter((t) => t.type === "expense" || t.type === "transfer_out")
+  // Totais do mês selecionado, servidos pelo snapshot quando disponível
+  // (get_month_summary). Saldo = acumulado até o fim do mês; receita/despesa = do mês.
+  const summary = summaryResult.data?.[0]
+  const balance = Number(summary?.balance ?? 0)
+  const income = Number(summary?.income ?? 0)
+  const expenses = Number(summary?.expenses ?? 0)
+
+  // Base do dízimo: apenas receitas genuínas (type income), sem retiradas de caixinha.
+  const tithableIncome = transactions
+    .filter((t) => t.type === "income")
     .reduce((sum, t) => sum + Number(t.amount), 0)
 
   return (
@@ -88,6 +91,8 @@ export default async function FinanceiroPage({
       </div>
 
       <BalanceCard balance={balance} income={income} expenses={expenses} month={month} />
+
+      <TitheCard income={tithableIncome} />
 
       <div className="grid grid-cols-3 gap-3">
         <a href="/financeiro/recorrentes" className="flex items-center justify-center gap-2 p-3 rounded-lg bg-card hover:bg-muted text-sm border border-border">
@@ -109,13 +114,15 @@ export default async function FinanceiroPage({
         <TabsList className="w-full">
           <TabsTrigger value="individual" className="flex-1">Meus lançamentos</TabsTrigger>
           <TabsTrigger value="familia" className="flex-1" asChild>
-            <a href="/financeiro/familia">Visão da família</a>
+            <a href={`/financeiro/familia?month=${month}`}>Visão da família</a>
           </TabsTrigger>
         </TabsList>
         <TabsContent value="individual" className="mt-4">
           <TransactionList
             transactions={transactions}
             members={members}
+            categories={categories}
+            currentUserId={ctx.userId}
             emptyMessage="Nenhum lançamento este mês"
           />
         </TabsContent>

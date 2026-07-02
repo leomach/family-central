@@ -28,7 +28,7 @@ export type IncomeProportions = {
 }
 export type BalanceSnapshot = {
   id: string; family_id: string; user_id: string; month: string
-  balance: number; is_dirty: boolean; computed_at: string
+  balance: number; income: number; expenses: number; is_dirty: boolean; computed_at: string
 }
 export type SavingsGoal = {
   id: string; family_id: string; name: string
@@ -157,8 +157,8 @@ export type Database = {
       }
       balance_snapshots: {
         Row: BalanceSnapshot
-        Insert: { id?: string; family_id: string; user_id: string; month: string; balance: number; is_dirty?: boolean; computed_at?: string }
-        Update: { balance?: number; is_dirty?: boolean; computed_at?: string }
+        Insert: { id?: string; family_id: string; user_id: string; month: string; balance: number; income?: number; expenses?: number; is_dirty?: boolean; computed_at?: string }
+        Update: { balance?: number; income?: number; expenses?: number; is_dirty?: boolean; computed_at?: string }
         Relationships: []
       }
       savings_goals: {
@@ -171,7 +171,15 @@ export type Database = {
         Row: SavingsContribution
         Insert: { id?: string; goal_id: string; user_id: string; family_id: string; amount: number; transaction_id: string; created_at?: string }
         Update: { amount?: number }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "savings_contributions_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       push_subscriptions: {
         Row: PushSubscription
@@ -253,12 +261,24 @@ export type Database = {
         Returns: number
       }
       contribute_to_goal: {
-        Args: { p_goal_id: string; p_user_id: string; p_family_id: string; p_amount: number; p_direction: "deposit" | "withdraw" }
+        Args: { p_goal_id: string; p_user_id: string; p_family_id: string; p_amount: number; p_direction: "deposit" | "withdraw"; p_date?: string }
         Returns: string
+      }
+      update_contribution: {
+        Args: { p_contribution_id: string; p_amount: number; p_date: string }
+        Returns: undefined
       }
       generate_recurring_transactions: {
         Args: Record<string, never>
         Returns: number
+      }
+      get_month_summary: {
+        Args: { p_user_id: string; p_month: string }
+        Returns: { balance: number; income: number; expenses: number }[]
+      }
+      get_family_month_summary: {
+        Args: { p_family_id: string; p_month: string }
+        Returns: { user_id: string; income: number; expenses: number; balance: number }[]
       }
     }
     Enums: { [_ in never]: never }

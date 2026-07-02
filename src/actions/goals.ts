@@ -36,6 +36,7 @@ export async function contributeToGoal(input: {
   familyId: string
   amount: number
   direction: "deposit" | "withdraw"
+  date?: string // YYYY-MM-DD, padrão: hoje
 }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -51,18 +52,21 @@ export async function contributeToGoal(input: {
 
   if (!member) return { error: "Sem permissão" }
 
+  const today = new Date().toISOString().split("T")[0]
+  const date = input.date ?? today
+
   const { data, error } = await supabase.rpc("contribute_to_goal", {
     p_goal_id: input.goalId,
     p_user_id: user.id,
     p_family_id: input.familyId,
     p_amount: input.amount,
     p_direction: input.direction,
+    p_date: date,
   })
 
   if (error) return { error: error.message }
 
-  // Invalidate snapshot
-  const monthStr = getMonthStart()
+  const monthStr = getMonthStart(new Date(date + "T00:00:00"))
   await supabase
     .from("balance_snapshots")
     .update({ is_dirty: true })
@@ -73,4 +77,38 @@ export async function contributeToGoal(input: {
   revalidatePath("/enxoval")
   revalidatePath("/financeiro")
   return { ok: true, transactionId: data }
+}
+
+export async function updateContribution(input: {
+  contributionId: string
+  goalId: string
+  amount: number
+  date: string // YYYY-MM-DD
+  oldDate: string // para invalidar o mês anterior se mudou
+}) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Não autenticado" }
+
+  const { error } = await supabase.rpc("update_contribution", {
+    p_contribution_id: input.contributionId,
+    p_amount: input.amount,
+    p_date: input.date,
+  })
+
+  if (error) return { error: error.message }
+
+  // Invalidar snapshots a partir do mês mais antigo afetado
+  const earlierMonth = input.date < input.oldDate ? input.date : input.oldDate
+  const monthStr = getMonthStart(new Date(earlierMonth + "T00:00:00"))
+  await supabase
+    .from("balance_snapshots")
+    .update({ is_dirty: true })
+    .eq("user_id", user.id)
+    .gte("month", monthStr)
+
+  revalidatePath(`/enxoval/${input.goalId}`)
+  revalidatePath("/enxoval")
+  revalidatePath("/financeiro")
+  return { ok: true }
 }

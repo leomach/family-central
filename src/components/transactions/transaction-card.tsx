@@ -1,28 +1,35 @@
 "use client"
 
 import { useState } from "react"
-import type { Transaction } from "@/types/database"
+import type { Category, Transaction } from "@/types/database"
 import type { MemberInfo } from "@/lib/family"
 import { formatCurrency, cn } from "@/lib/utils"
 import { deleteTransaction } from "@/actions/transactions"
 import { Badge } from "@/components/ui/badge"
-import { Trash2, Users } from "lucide-react"
+import { Pencil, Trash2, Users } from "lucide-react"
 import { toast } from "@/components/ui/toaster"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { EditTransactionModal } from "./edit-transaction-modal"
 
 interface TransactionCardProps {
   transaction: Transaction
   members?: MemberInfo[]
   showOwner?: boolean
+  categories?: Category[]
+  currentUserId?: string
 }
 
-export function TransactionCard({ transaction: tx, members = [], showOwner }: TransactionCardProps) {
+export function TransactionCard({ transaction: tx, members = [], showOwner, categories = [], currentUserId }: TransactionCardProps) {
   const [deleting, setDeleting] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
 
   const isPositive = tx.type === "income" || tx.type === "transfer_in"
   const isShared = !!tx.group_id
+  const isTransfer = tx.type === "transfer_in" || tx.type === "transfer_out"
   const owner = members.find((m) => m.user_id === tx.user_id)
+  // Caixinha é ajustada pela própria caixinha; parcela de terceiro não é editável por aqui.
+  const canEdit = !isTransfer && (currentUserId === undefined || tx.user_id === currentUserId)
 
   async function handleDelete() {
     setDeleting(true)
@@ -70,6 +77,16 @@ export function TransactionCard({ transaction: tx, members = [], showOwner }: Tr
           <span className={cn("text-sm font-semibold whitespace-nowrap", isPositive ? "text-income" : "text-expense")}>
             {isPositive ? "+" : "−"}{formatCurrency(Number(tx.amount))}
           </span>
+          {canEdit && (
+            <button
+              onClick={() => setEditOpen(true)}
+              disabled={deleting}
+              className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
+              aria-label="Editar lançamento"
+            >
+              <Pencil className="h-4 w-4" />
+            </button>
+          )}
           <button
             onClick={() => setConfirmOpen(true)}
             disabled={deleting}
@@ -80,6 +97,15 @@ export function TransactionCard({ transaction: tx, members = [], showOwner }: Tr
           </button>
         </div>
       </div>
+
+      {canEdit && (
+        <EditTransactionModal
+          transaction={tx}
+          categories={categories}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+        />
+      )}
 
       <ConfirmDialog
         open={confirmOpen}

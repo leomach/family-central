@@ -5,21 +5,27 @@ import { getFamilyContext, getFamilyMembers } from "@/lib/family"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { TransactionList } from "@/components/transactions/transaction-list"
-import { formatCurrency, currentMonthStart } from "@/lib/utils"
+import { MonthSelector } from "@/components/finance/month-selector"
+import { formatCurrency, formatMonth, currentMonthStart } from "@/lib/utils"
 
 export const metadata: Metadata = { title: "Visão da Família" }
 
-export default async function FamiliaFinanceiroPage() {
+export default async function FamiliaFinanceiroPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ month?: string }>
+}) {
   const ctx = await getFamilyContext()
   const supabase = await createClient()
 
-  const month = currentMonthStart()
+  const params = await searchParams
+  const month = params.month ?? currentMonthStart()
   const monthEnd = new Date(month)
   monthEnd.setMonth(monthEnd.getMonth() + 1)
   monthEnd.setDate(0)
   const monthEndStr = monthEnd.toISOString().split("T")[0]
 
-  const [transactionsResult, proportionsResult, members] = await Promise.all([
+  const [transactionsResult, proportionsResult, members, categoriesResult, summaryResult] = await Promise.all([
     supabase
       .from("transactions")
       .select("*, category:categories(id,name,icon,type)")
@@ -34,34 +40,41 @@ export default async function FamiliaFinanceiroPage() {
       .eq("family_id", ctx.familyId)
       .eq("month", month),
     getFamilyMembers(ctx.familyId),
+    supabase
+      .from("categories")
+      .select("*")
+      .eq("family_id", ctx.familyId)
+      .order("name"),
+    supabase.rpc("get_family_month_summary", { p_family_id: ctx.familyId, p_month: month }),
   ])
 
   const transactions = transactionsResult.data ?? []
   const proportions = proportionsResult.data ?? []
+  const categories = categoriesResult.data ?? []
+  // Totais do mês por membro, servidos pelos snapshots quando disponíveis.
+  const summaryByUser = new Map(
+    (summaryResult.data ?? []).map((r) => [r.user_id, r])
+  )
 
-  const totalIncome = transactions
-    .filter((t) => t.type === "income" || t.type === "transfer_in")
-    .reduce((sum, t) => sum + Number(t.amount), 0)
-  const totalExpenses = transactions
-    .filter((t) => t.type === "expense" || t.type === "transfer_out")
-    .reduce((sum, t) => sum + Number(t.amount), 0)
+  const totalIncome = (summaryResult.data ?? []).reduce((sum, r) => sum + Number(r.income), 0)
+  const totalExpenses = (summaryResult.data ?? []).reduce((sum, r) => sum + Number(r.expenses), 0)
 
   const perMember = members.map((m) => {
-    const inc = transactions
-      .filter((t) => t.user_id === m.user_id && (t.type === "income" || t.type === "transfer_in"))
-      .reduce((s, t) => s + Number(t.amount), 0)
-    const exp = transactions
-      .filter((t) => t.user_id === m.user_id && (t.type === "expense" || t.type === "transfer_out"))
-      .reduce((s, t) => s + Number(t.amount), 0)
+    const row = summaryByUser.get(m.user_id)
+    const inc = Number(row?.income ?? 0)
+    const exp = Number(row?.expenses ?? 0)
     const proportion = Number(proportions.find((p) => p.user_id === m.user_id)?.proportion ?? 0)
     return { ...m, inc, exp, proportion }
   })
 
   return (
     <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-4">
-      <div className="flex items-center gap-2">
-        <Link href="/financeiro" className="text-muted-foreground hover:text-foreground text-sm">← Voltar</Link>
-        <h1 className="text-xl font-bold">Visão da Família</h1>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Link href={`/financeiro?month=${month}`} className="text-muted-foreground hover:text-foreground text-sm">← Voltar</Link>
+          <h1 className="text-xl font-bold">Visão da Família</h1>
+        </div>
+        <MonthSelector month={month} />
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -85,7 +98,7 @@ export default async function FamiliaFinanceiroPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Proporção de renda este mês</CardTitle>
+          <CardTitle className="text-base capitalize">Proporção de renda — {formatMonth(month)}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {perMember.map((m) => (
@@ -120,13 +133,15 @@ export default async function FamiliaFinanceiroPage() {
           <TabsTrigger value="shared" className="flex-1">Compartilhados</TabsTrigger>
         </TabsList>
         <TabsContent value="all" className="mt-4">
-          <TransactionList transactions={transactions} members={members} showOwner emptyMessage="Nenhum lançamento este mês" />
+          <TransactionList transactions={transactions} members={members} showOwner categories={categories} currentUserId={ctx.userId} emptyMessage="Nenhum lançamento este mês" />
         </TabsContent>
         <TabsContent value="shared" className="mt-4">
           <TransactionList
             transactions={transactions.filter((t) => t.group_id)}
             members={members}
             showOwner
+            categories={categories}
+            currentUserId={ctx.userId}
             emptyMessage="Nenhum lançamento compartilhado"
           />
         </TabsContent>

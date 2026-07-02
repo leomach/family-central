@@ -21,6 +21,7 @@ interface ContributionModalProps {
 export function ContributionModal({ goal, userId, familyId, direction }: ContributionModalProps) {
   const [open, setOpen] = useState(false)
   const [amount, setAmount] = useState("")
+  const [date, setDate] = useState(() => new Date().toISOString().split("T")[0])
   const [loading, setLoading] = useState(false)
 
   const isDeposit = direction === "deposit"
@@ -46,6 +47,7 @@ export function ContributionModal({ goal, userId, familyId, direction }: Contrib
       familyId,
       amount: parsedAmount,
       direction,
+      date,
     })
 
     if (result.error) {
@@ -54,6 +56,7 @@ export function ContributionModal({ goal, userId, familyId, direction }: Contrib
       toast({ title: isDeposit ? "Depósito realizado!" : "Retirada realizada!" })
       setOpen(false)
       setAmount("")
+      setDate(new Date().toISOString().split("T")[0])
     }
     setLoading(false)
   }
@@ -84,17 +87,29 @@ export function ContributionModal({ goal, userId, familyId, direction }: Contrib
             )}
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="contribution-amount">Valor (R$)</Label>
-            <Input
-              id="contribution-amount"
-              inputMode="decimal"
-              placeholder="0,00"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              required
-              autoFocus
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="contribution-amount">Valor (R$)</Label>
+              <Input
+                id="contribution-amount"
+                inputMode="decimal"
+                placeholder="0,00"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                required
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="contribution-date">Data</Label>
+              <Input
+                id="contribution-date"
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                required
+              />
+            </div>
           </div>
 
           <p className="text-xs text-muted-foreground">

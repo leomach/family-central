@@ -6,6 +6,16 @@ import { getMonthStart, splitAmount } from "@/lib/utils"
 import type { TransactionType } from "@/types/database"
 import { z } from "zod"
 
+// Revalida todas as rotas que exibem métricas financeiras — qualquer mutação de
+// transação altera saldo, receitas/despesas do mês (home + financeiro), a visão
+// da família e o gasto por categoria (orçamento).
+function revalidateFinancePaths() {
+  revalidatePath("/")
+  revalidatePath("/financeiro")
+  revalidatePath("/financeiro/familia")
+  revalidatePath("/orcamento")
+}
+
 const TransactionSchema = z.object({
   type: z.enum(["income", "expense"]),
   amount: z.number().positive(),
@@ -48,7 +58,7 @@ export async function createTransaction(input: z.infer<typeof TransactionSchema>
   }
 
   await invalidateSnapshots(user.id, date)
-  revalidatePath("/financeiro")
+  revalidateFinancePaths()
   return { ok: true }
 }
 
@@ -121,8 +131,7 @@ async function createSharedTransaction(data: {
   // Invalidate snapshots for all participants
   await Promise.all(data.participants.map((uid) => invalidateSnapshots(uid, data.date)))
 
-  revalidatePath("/financeiro")
-  revalidatePath("/financeiro/familia")
+  revalidateFinancePaths()
   return { ok: true }
 }
 
@@ -133,7 +142,7 @@ export async function deleteTransaction(transactionId: string) {
 
   const { data: tx } = await supabase
     .from("transactions")
-    .select("group_id, date, family_id, user_id")
+    .select("group_id, date, family_id, user_id, type")
     .eq("id", transactionId)
     .single()
 
@@ -165,8 +174,157 @@ export async function deleteTransaction(transactionId: string) {
     await invalidateSnapshots(user.id, tx.date)
   }
 
-  revalidatePath("/financeiro")
-  revalidatePath("/financeiro/familia")
+  // Excluir uma receita muda as proporções de renda do mês — recalcula.
+  if (tx.type === "income") {
+    await recalculateProportions(tx.family_id, getMonthStart(tx.date))
+  }
+
+  revalidateFinancePaths()
+  return { ok: true }
+}
+
+const UpdateTransactionSchema = z.object({
+  id: z.string().uuid(),
+  type: z.enum(["income", "expense"]),
+  amount: z.number().positive(),
+  description: z.string().min(1).max(200),
+  category_id: z.string().uuid().optional().nullable(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+})
+
+export async function updateTransaction(input: z.infer<typeof UpdateTransactionSchema>) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: "Não autenticado" }
+
+  const parsed = UpdateTransactionSchema.safeParse(input)
+  if (!parsed.success) return { error: "Dados inválidos" }
+
+  const { data: tx } = await supabase
+    .from("transactions")
+    .select("id, group_id, user_id, family_id, type, date")
+    .eq("id", parsed.data.id)
+    .is("deleted_at", null)
+    .single()
+
+  if (!tx) return { error: "Transação não encontrada" }
+  if (tx.user_id !== user.id) return { error: "Sem permissão" }
+  // Movimentações de caixinha são sincronizadas com o saldo da meta via trigger;
+  // editá-las aqui dessincronizaria — devem ser ajustadas pela própria caixinha.
+  if (tx.type === "transfer_in" || tx.type === "transfer_out") {
+    return { error: "Movimentações de caixinha devem ser editadas pela própria caixinha" }
+  }
+
+  if (tx.group_id) {
+    return updateSharedTransaction({
+      groupId: tx.group_id,
+      familyId: tx.family_id,
+      oldDate: tx.date,
+      amount: parsed.data.amount,
+      description: parsed.data.description,
+      category_id: parsed.data.category_id ?? null,
+      date: parsed.data.date,
+    })
+  }
+
+  const oldDate = tx.date
+  const oldType = tx.type
+
+  const { error } = await supabase
+    .from("transactions")
+    .update({
+      type: parsed.data.type as TransactionType,
+      amount: parsed.data.amount,
+      description: parsed.data.description,
+      category_id: parsed.data.category_id ?? null,
+      date: parsed.data.date,
+    })
+    .eq("id", tx.id)
+
+  if (error) return { error: error.message }
+
+  // Recalcula proporções nos meses afetados se a transação era ou passou a ser receita.
+  const monthsToRecalc = new Set<string>()
+  if (oldType === "income") monthsToRecalc.add(getMonthStart(oldDate))
+  if (parsed.data.type === "income") monthsToRecalc.add(getMonthStart(parsed.data.date))
+  for (const m of monthsToRecalc) await recalculateProportions(tx.family_id, m)
+
+  // Invalida snapshots do mês antigo e do novo (caso a data tenha mudado de mês).
+  await invalidateSnapshots(user.id, oldDate)
+  if (getMonthStart(parsed.data.date) !== getMonthStart(oldDate)) {
+    await invalidateSnapshots(user.id, parsed.data.date)
+  }
+
+  revalidateFinancePaths()
+  return { ok: true }
+}
+
+async function updateSharedTransaction(data: {
+  groupId: string
+  familyId: string
+  oldDate: string
+  amount: number
+  description: string
+  category_id: string | null
+  date: string
+}) {
+  const supabase = await createClient()
+  const serviceClient = await createServiceClient()
+
+  // Parcelas atuais do grupo (uma por participante).
+  const { data: parts } = await supabase
+    .from("transactions")
+    .select("id, user_id")
+    .eq("group_id", data.groupId)
+    .is("deleted_at", null)
+
+  if (!parts || parts.length === 0) return { error: "Grupo não encontrado" }
+
+  const participants = parts.map((p) => p.user_id)
+
+  // Re-rateia o novo total proporcionalmente à renda do mês da nova data.
+  const month = getMonthStart(data.date)
+  const { data: proportions } = await supabase
+    .from("income_proportions")
+    .select("user_id, proportion")
+    .eq("family_id", data.familyId)
+    .eq("month", month)
+    .in("user_id", participants)
+
+  const proportionMap = new Map(
+    (proportions ?? []).map((p) => [p.user_id, Number(p.proportion)])
+  )
+  const split = splitAmount(data.amount, participants, proportionMap)
+  if ("error" in split) return { error: split.error }
+
+  // Atualiza cada parcela (service client: parcelas pertencem a vários usuários).
+  for (const p of parts) {
+    const { error } = await serviceClient
+      .from("transactions")
+      .update({
+        amount: split.get(p.user_id)!,
+        description: data.description,
+        category_id: data.category_id,
+        date: data.date,
+      })
+      .eq("id", p.id)
+    if (error) return { error: error.message }
+  }
+
+  // Atualiza o cabeçalho do grupo.
+  const { error: groupError } = await serviceClient
+    .from("transaction_groups")
+    .update({ description: data.description, total_amount: data.amount, date: data.date })
+    .eq("id", data.groupId)
+  if (groupError) return { error: groupError.message }
+
+  // Invalida snapshots de todos os participantes (mês antigo e novo).
+  await Promise.all(participants.map((uid) => invalidateSnapshots(uid, data.oldDate)))
+  if (getMonthStart(data.date) !== getMonthStart(data.oldDate)) {
+    await Promise.all(participants.map((uid) => invalidateSnapshots(uid, data.date)))
+  }
+
+  revalidateFinancePaths()
   return { ok: true }
 }
 
@@ -200,7 +358,17 @@ async function recalculateProportions(familyId: string, month: string) {
   })
 
   const total = Array.from(totalByUser.values()).reduce((a, b) => a + b, 0)
-  if (total === 0) return
+  if (total === 0) {
+    // Sem receitas no mês: remove proporções obsoletas (ex.: última receita excluída
+    // ou movida). A ausência é tratada como 0 na visão da família e como divisão
+    // igual no rateio de despesas compartilhadas.
+    await supabase
+      .from("income_proportions")
+      .delete()
+      .eq("family_id", familyId)
+      .eq("month", month)
+    return
+  }
 
   // A última proporção recebe o resto (1 - soma das anteriores) para que o
   // conjunto some exatamente 1 — evita o 0,33+0,33+0,33 = 0,99 do arredondamento.
@@ -223,7 +391,9 @@ async function recalculateProportions(familyId: string, month: string) {
 }
 
 async function invalidateSnapshots(userId: string, transactionDate: string) {
-  const supabase = await createClient()
+  // Service client: a RLS de balance_snapshots só permite o próprio usuário; em
+  // transações compartilhadas precisamos invalidar snapshots de outros participantes.
+  const supabase = await createServiceClient()
   const monthStr = getMonthStart(transactionDate)
 
   await supabase

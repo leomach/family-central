@@ -18,7 +18,7 @@ export function BalanceCard({ balance, income, expenses, month }: BalanceCardPro
           <p className={`text-3xl font-bold mt-1 ${balance >= 0 ? "text-income" : "text-expense"}`}>
             {formatCurrency(balance)}
           </p>
-          <p className="text-xs text-muted-foreground mt-1">saldo atual</p>
+          <p className="text-xs text-muted-foreground mt-1">saldo acumulado</p>
         </div>
 
         <div className="grid grid-cols-2 gap-4 pt-2 border-t border-border">

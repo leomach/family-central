@@ -33,18 +33,21 @@ export async function GET(req: Request) {
 
     if (existing && !existing.is_dirty) continue
 
-    const { data: balance } = await supabase.rpc("get_user_balance", {
+    // Materializa saldo + receitas + despesas do mês. Como o snapshot está sujo
+    // ou inexistente aqui, get_month_summary recomputa a partir das transações.
+    const { data: summary } = await supabase.rpc("get_month_summary", {
       p_user_id: m.user_id,
-      p_until: new Date(prevMonth.getFullYear(), prevMonth.getMonth() + 1, 0)
-        .toISOString()
-        .split("T")[0],
+      p_month: monthStr,
     })
+    const s = summary?.[0]
 
     await supabase.from("balance_snapshots").upsert({
       user_id: m.user_id,
       family_id: m.family_id,
       month: monthStr,
-      balance: balance ?? 0,
+      balance: s?.balance ?? 0,
+      income: s?.income ?? 0,
+      expenses: s?.expenses ?? 0,
       is_dirty: false,
       computed_at: new Date().toISOString(),
     }, { onConflict: "user_id,month" })
